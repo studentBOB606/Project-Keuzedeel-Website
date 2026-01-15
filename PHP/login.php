@@ -8,7 +8,7 @@
 <h1>Login</h1>
 
 <form method="post" action="login_handler.php">
-    <label>Username</label><br>
+    <label>Studentnummer</label><br>
     <input type="text" name="username" required><br><br>
 
     <label>Password</label><br>
