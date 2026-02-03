@@ -124,7 +124,6 @@ $students = Student::getAll();
             </a>
             <nav class="nav">
                 <a href="index.php">Dashboard</a>
-                <a href="student.php">Studenten</a>
                 <a href="keuzedeel.php">Scores</a>
                 <?php if (Auth::isAdmin()): ?>
                     <a href="admin.php">Admin</a>
