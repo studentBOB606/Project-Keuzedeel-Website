@@ -1,7 +1,8 @@
 <?php
 session_start();
-if (!isset($_SESSION["role"]) || $_SESSION["role"] !== "student") {
-    die("Access denied");
-}
+require_once 'classes.php';
+
+// Require student access
+Auth::requireStudent();
 ?>
 <h1>Student dashboard</h1>

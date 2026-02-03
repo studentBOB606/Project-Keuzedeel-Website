@@ -1,21 +1,18 @@
 <?php
 session_start();
+require_once 'classes.php';
 
+// Handle logout
 if (isset($_GET['logout']) && $_GET['logout'] === '1') {
-	$_SESSION = [];
-	if (ini_get('session.use_cookies')) {
-		$params = session_get_cookie_params();
-		setcookie(session_name(), '', time() - 42000, $params['path'], $params['domain'], $params['secure'], $params['httponly']);
-	}
-	session_destroy();
+	Auth::logout();
 	header('Location: index.php');
 	exit;
 }
 
-$role = $_SESSION['role'] ?? null; // expected values: 'admin' or 'student'
-$isLoggedIn = isset($_SESSION['student_id']) || $role !== null;
-$isAdmin = $role === 'admin';
-$isStudent = ($role === 'student') || ($role === null && isset($_SESSION['student_id']));
+// Get current user status
+$isLoggedIn = Auth::isLoggedIn();
+$isAdmin = Auth::isAdmin();
+$isStudent = Auth::isStudent();
 ?>
 <!DOCTYPE html>
 <html lang="nl">
@@ -93,7 +90,7 @@ $isStudent = ($role === 'student') || ($role === null && isset($_SESSION['studen
 		<?php elseif ($isStudent): ?>
 			<!-- Student Dashboard -->
 			<div class="hero">
-				<div class="hero-badge">Student Portal</div>
+				<div class="hero-badge">Student Portaal</div>
 				<h1>Welkom terug</h1>
 				<p class="hero-subtitle">Bekijk je keuzedelen, volg je voortgang en beheer je account in één overzichtelijke omgeving.</p>
 			</div>

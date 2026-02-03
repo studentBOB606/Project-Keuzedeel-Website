@@ -1,14 +1,12 @@
 <?php
 session_start();
+require_once 'classes.php';
 
-$role = $_SESSION['role'] ?? null;
-$isLoggedIn = isset($_SESSION['student_id']) || $role !== null;
-$isAdmin = $role === 'admin';
+// Require authentication
+Auth::requireAuth();
 
-if (!$isLoggedIn) {
-    header('Location: login.php');
-    exit;
-}
+$isAdmin = Auth::isAdmin();
+$isStudent = Auth::isStudent();
 
 $message = '';
 $error = '';
@@ -18,24 +16,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $newPassword = $_POST['new_password'] ?? '';
     $confirmPassword = $_POST['confirm_password'] ?? '';
 
-    if ($newPassword === '' || $confirmPassword === '' || $currentPassword === '') {
+    if ($currentPassword === '' || $newPassword === '' || $confirmPassword === '') {
         $error = 'Vul alle velden in.';
     } elseif ($newPassword !== $confirmPassword) {
         $error = 'Nieuwe wachtwoorden komen niet overeen.';
     } elseif (strlen($newPassword) < 6) {
         $error = 'Kies een wachtwoord van minimaal 6 tekens.';
     } else {
-        if (!isset($_SESSION['student_id'])) {
-            // Admin password change is not possible until an admin table/login exists.
-            $error = 'Admin wachtwoord wijzigen is nog niet ingesteld (er is nog geen admin-account tabel/login).';
-        } else {
-            $conn = new mysqli('localhost', 'root', '', 'studenten');
-            if ($conn->connect_error) {
-                $error = 'Database verbinding mislukt.';
-            } else {
-                $studentId = (int)$_SESSION['student_id'];
+        try {
+            $db = Database::getInstance();
+            
+            if ($isAdmin) {
+                // Admin password change
+                $adminId = $_SESSION['admin_id'];
+                $stmt = $db->prepare('SELECT password_hash FROM users WHERE id = ? AND role = "admin"');
+                $stmt->bind_param('i', $adminId);
+                $stmt->execute();
+                $result = $stmt->get_result();
 
-                $stmt = $conn->prepare('SELECT password_hash FROM student WHERE id = ?');
+                if ($result->num_rows !== 1) {
+                    $error = 'Account niet gevonden.';
+                } else {
+                    $row = $result->fetch_assoc();
+                    if (!password_verify($currentPassword, $row['password_hash'])) {
+                        $error = 'Huidig wachtwoord is onjuist.';
+                    } else {
+                        $newHash = password_hash($newPassword, PASSWORD_DEFAULT);
+                        $update = $db->prepare('UPDATE users SET password_hash = ? WHERE id = ?');
+                        $update->bind_param('si', $newHash, $adminId);
+                        if ($update->execute()) {
+                            $message = 'Wachtwoord succesvol gewijzigd.';
+                        } else {
+                            $error = 'Kon wachtwoord niet wijzigen.';
+                        }
+                    }
+                }
+            } elseif ($isStudent) {
+                // Student password change
+                $studentId = $_SESSION['student_id'];
+                $stmt = $db->prepare('SELECT password_hash FROM student WHERE id = ?');
                 $stmt->bind_param('i', $studentId);
                 $stmt->execute();
                 $result = $stmt->get_result();
@@ -48,18 +67,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                         $error = 'Huidig wachtwoord is onjuist.';
                     } else {
                         $newHash = password_hash($newPassword, PASSWORD_DEFAULT);
-                        $update = $conn->prepare('UPDATE student SET password_hash = ? WHERE id = ?');
+                        $update = $db->prepare('UPDATE student SET password_hash = ? WHERE id = ?');
                         $update->bind_param('si', $newHash, $studentId);
                         if ($update->execute()) {
-                            $message = 'Wachtwoord gewijzigd.';
+                            $message = 'Wachtwoord succesvol gewijzigd.';
                         } else {
                             $error = 'Kon wachtwoord niet wijzigen.';
                         }
                     }
                 }
-
-                $conn->close();
             }
+        } catch (Exception $e) {
+            $error = 'Er is een fout opgetreden: ' . $e->getMessage();
         }
     }
 }
@@ -97,7 +116,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
         <div class="card">
             <h1>Profiel</h1>
-            <p>Hier kun je je gegevens aanpassen. Voor nu is wachtwoord wijzigen beschikbaar voor student-accounts.</p>
+            <p>Hier kun je je wachtwoord wijzigen. Werkt voor zowel studenten als admin accounts.</p>
 
             <?php if ($message): ?>
                 <div class="alert ok"><?= htmlspecialchars($message) ?></div>
@@ -129,12 +148,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     <button class="btn btn-primary" type="submit">Opslaan</button>
                 </div>
             </form>
-
-            <?php if ($isAdmin): ?>
-                <div class="alert" style="margin-top:14px;">
-                    Admin tip: om dit ook voor admins te laten werken, heb je een admin tabel + login nodig (met een password_hash kolom), dan kan ik dezelfde flow voor admin toevoegen.
-                </div>
-            <?php endif; ?>
         </div>
     </div>
 </body>
