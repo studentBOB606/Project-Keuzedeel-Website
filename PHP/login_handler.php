@@ -12,8 +12,9 @@ if (!$username || !$password || !$role) {
 
 // Attempt login
 if (Auth::login($username, $password, $role)) {
-    header("Location: index.php");
+    header("Location: ../views/index.php");
     exit;
 } else {
-    die("Login failed");
+    header("Location: ../views/login.php?error=1");
+    exit;
 }

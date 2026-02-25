@@ -5,6 +5,90 @@ use App\Models\User as EloquentUser;
 use Illuminate\Database\Capsule\Manager as DB;
 
 /**
+ * Wrapper for PDO statement to provide mysqli-compatible interface
+ */
+class MysqliResultWrapper {
+    private $stmt;
+    private $fetchedAll = false;
+    private $rows = [];
+    private $currentIndex = 0;
+    
+    public function __construct($stmt) {
+        $this->stmt = $stmt;
+    }
+    
+    public function fetch_assoc() {
+        if (!$this->fetchedAll) {
+            return $this->stmt->fetch(PDO::FETCH_ASSOC);
+        }
+        if ($this->currentIndex < count($this->rows)) {
+            return $this->rows[$this->currentIndex++];
+        }
+        return null;
+    }
+    
+    public function fetch_all($mode = MYSQLI_ASSOC) {
+        if (!$this->fetchedAll) {
+            $this->rows = $this->stmt->fetchAll(PDO::FETCH_ASSOC);
+            $this->fetchedAll = true;
+        }
+        return $this->rows;
+    }
+    
+    public function num_rows() {
+        if (!$this->fetchedAll) {
+            $this->rows = $this->stmt->fetchAll(PDO::FETCH_ASSOC);
+            $this->fetchedAll = true;
+            $this->currentIndex = 0;
+        }
+        return count($this->rows);
+    }
+    
+    public function __get($name) {
+        if ($name === 'num_rows') {
+            return $this->num_rows();
+        }
+        return null;
+    }
+}
+
+/**
+ * Wrapper for PDO prepared statement to provide mysqli-compatible interface
+ */
+class MysqliStatementWrapper {
+    private $stmt;
+    private $params = [];
+    private $types = '';
+    
+    public function __construct($stmt) {
+        $this->stmt = $stmt;
+    }
+    
+    public function bind_param($types, &...$params) {
+        $this->types = $types;
+        $this->params = $params;
+        return true;
+    }
+    
+    public function execute() {
+        if (empty($this->params)) {
+            return $this->stmt->execute();
+        }
+        
+        // Convert mysqli placeholders to PDO (? to :param)
+        return $this->stmt->execute($this->params);
+    }
+    
+    public function get_result() {
+        return new MysqliResultWrapper($this->stmt);
+    }
+    
+    public function close() {
+        $this->stmt->closeCursor();
+    }
+}
+
+/**
  * Database connection class using Singleton pattern
  * Now wraps Eloquent for backward compatibility
  */
@@ -29,16 +113,19 @@ class Database {
     }
     
     public function query($sql) {
-        return DB::select(DB::raw($sql));
+        // Execute raw SQL using PDO and wrap result for mysqli compatibility
+        $stmt = $this->connection->query($sql);
+        return new MysqliResultWrapper($stmt);
     }
     
     public function prepare($sql) {
         // For backward compatibility, return mysqli stmt-like object
-        return DB::connection()->getPdo()->prepare($sql);
+        $pdoStmt = $this->connection->prepare($sql);
+        return new MysqliStatementWrapper($pdoStmt);
     }
     
     public function escape($string) {
-        return DB::connection()->getPdo()->quote($string);
+        return $this->connection->quote($string);
     }
     
     private function __clone() {}
