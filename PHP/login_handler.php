@@ -1,6 +1,6 @@
 <?php
 session_start();
-require_once 'classes.php';
+require_once '../bootstrap.php';
 
 $username = $_POST["username"] ?? null;
 $password = $_POST["password"] ?? null;

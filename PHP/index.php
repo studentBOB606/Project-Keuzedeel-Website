@@ -1,6 +1,6 @@
 <?php
 session_start();
-require_once 'classes.php';
+require_once '../bootstrap.php';
 
 // Handle logout
 if (isset($_GET['logout']) && $_GET['logout'] === '1') {

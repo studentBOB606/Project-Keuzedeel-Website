@@ -1,0 +1,5 @@
+/vendor/
+/storage/views/*.php
+composer.lock
+.env
+*.log

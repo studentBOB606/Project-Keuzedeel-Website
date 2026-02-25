@@ -1,20 +1,42 @@
 <?php
 session_start();
-require_once 'classes.php';
+require_once '../bootstrap.php';
 
 // Handle score updates (admin only)
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['student_id']) && isset($_POST['score'])) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['student_id'])) {
     $student_id = intval($_POST['student_id']);
-    $score = floatval($_POST['score']);
+    $score = ($_POST['score'] === '' || $_POST['score'] === null) ? null : floatval($_POST['score']);
     
     if (ScoreManager::updateScore($student_id, $score)) {
-        header("Location: keuzedeel.php");
+        header("Location: keuzedeel.php" . (isset($_GET['klas']) ? "?klas=" . urlencode($_GET['klas']) : ""));
         exit;
     }
 }
 
-// Get all students
-$students = Student::getAll();
+// Get selected class filter (admin only)
+$selectedKlas = isset($_GET['klas']) ? $_GET['klas'] : 'all';
+
+// Get all students (filtered by class if admin selected one)
+$db = Database::getInstance();
+if (Auth::isAdmin() && $selectedKlas !== 'all') {
+    $stmt = $db->prepare("SELECT id, studentnummer, opleiding, klas, score FROM student WHERE klas = ?");
+    $stmt->bind_param("s", $selectedKlas);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $students = [];
+    while ($row = $result->fetch_assoc()) {
+        $students[] = new Student($row);
+    }
+} else {
+    $students = Student::getAll();
+}
+
+// Get all unique classes for the filter dropdown
+$klassenResult = $db->query("SELECT DISTINCT klas FROM student ORDER BY klas");
+$klassen = [];
+while ($row = $klassenResult->fetch_assoc()) {
+    $klassen[] = $row['klas'];
+}
 ?>
 
 <!DOCTYPE html>
@@ -109,6 +131,42 @@ $students = Student::getAll();
             gap: 8px;
             align-items: center;
         }
+        .filter-container {
+            background: rgba(212, 175, 55, .1);
+            border: 2px solid rgba(212, 175, 55, .3);
+            border-radius: 16px;
+            padding: 20px 24px;
+            margin-bottom: 24px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+        .filter-label {
+            font-weight: 700;
+            color: var(--green-950);
+            font-size: 15px;
+        }
+        .filter-select {
+            padding: 10px 16px;
+            border: 2px solid var(--slate-300);
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: 600;
+            background: var(--white);
+            color: var(--green-950);
+            cursor: pointer;
+            transition: all .2s;
+            min-width: 150px;
+        }
+        .filter-select:focus {
+            outline: none;
+            border-color: var(--gold-500);
+            box-shadow: 0 0 0 4px rgba(212, 175, 55, .1);
+        }
+        .filter-select:hover {
+            border-color: var(--gold-500);
+        }
     </style>
 </head>
 <body>
@@ -126,7 +184,6 @@ $students = Student::getAll();
                 <a href="index.php">Dashboard</a>
                 <a href="keuzedeel.php">Scores</a>
                 <?php if (Auth::isAdmin()): ?>
-                    <a href="admin.php">Admin</a>
                 <?php endif; ?>
             </nav>
         </div>
@@ -147,6 +204,26 @@ $students = Student::getAll();
         <div class="table-container">
             <h2 style="color: var(--green-950); font-size: 28px; font-weight: 700; margin-bottom: 8px;">Student Overzicht</h2>
             <p style="color: var(--slate-700); margin-bottom: 20px;">Bekijk en update student scores</p>
+
+            <!-- Class Filter (Admin Only) -->
+            <?php if (Auth::isAdmin()): ?>
+                <div class="filter-container">
+                    <span class="filter-label">🎯 Filter op klas:</span>
+                    <select class="filter-select" onchange="window.location.href='keuzedeel.php?klas=' + this.value">
+                        <option value="all" <?php echo $selectedKlas === 'all' ? 'selected' : ''; ?>>Alle klassen</option>
+                        <?php foreach ($klassen as $klas): ?>
+                            <option value="<?php echo htmlspecialchars($klas); ?>" <?php echo $selectedKlas === $klas ? 'selected' : ''; ?>>
+                                <?php echo htmlspecialchars($klas); ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                    <?php if ($selectedKlas !== 'all'): ?>
+                        <span style="color: var(--green-700); font-weight: 600;">
+                            <?php echo count($students); ?> student(en) in deze klas
+                        </span>
+                    <?php endif; ?>
+                </div>
+            <?php endif; ?>
 
             <table class="student-table">
                 <thead>
@@ -178,7 +255,7 @@ $students = Student::getAll();
                                             <input type='hidden' name='student_id' value='{$student->getId()}'>
                                             <input type='number' name='score' class='score-input' 
                                                    min='0' max='10' step='0.1' 
-                                                   value='{$scoreValue}' placeholder='Score' required>
+                                                   value='{$scoreValue}' placeholder='Score'>
                                             <button type='submit' class='update-btn'>Update</button>
                                         </form>
                                       </td>";

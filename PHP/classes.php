@@ -1,20 +1,20 @@
 <?php
 
+use App\Models\Student as EloquentStudent;
+use App\Models\User as EloquentUser;
+use Illuminate\Database\Capsule\Manager as DB;
+
 /**
  * Database connection class using Singleton pattern
+ * Now wraps Eloquent for backward compatibility
  */
 class Database {
     private static $instance = null;
     private $connection;
     
     private function __construct() {
-        $this->connection = new mysqli("localhost", "root", "", "studenten");
-        
-        if ($this->connection->connect_error) {
-            throw new Exception("Database connection failed: " . $this->connection->connect_error);
-        }
-        
-        $this->connection->set_charset("utf8mb4");
+        // Use Eloquent's connection
+        $this->connection = DB::connection()->getPdo();
     }
     
     public static function getInstance() {
@@ -29,15 +29,16 @@ class Database {
     }
     
     public function query($sql) {
-        return $this->connection->query($sql);
+        return DB::select(DB::raw($sql));
     }
     
     public function prepare($sql) {
-        return $this->connection->prepare($sql);
+        // For backward compatibility, return mysqli stmt-like object
+        return DB::connection()->getPdo()->prepare($sql);
     }
     
     public function escape($string) {
-        return $this->connection->real_escape_string($string);
+        return DB::connection()->getPdo()->quote($string);
     }
     
     private function __clone() {}
@@ -48,50 +49,43 @@ class Database {
 }
 
 /**
- * Student Model
+ * Student Model - Wrapper around Eloquent for backward compatibility
  */
 class Student {
-    private $id;
-    private $studentnummer;
-    private $opleiding;
-    private $klas;
-    private $score;
-    private $passwordHash;
+    private $eloquentModel;
     
     public function __construct($data = []) {
-        $this->id = $data['id'] ?? null;
-        $this->studentnummer = $data['studentnummer'] ?? '';
-        $this->opleiding = $data['opleiding'] ?? '';
-        $this->klas = $data['klas'] ?? '';
-        $this->score = $data['score'] ?? null;
-        $this->passwordHash = $data['password_hash'] ?? '';
+        if ($data instanceof EloquentStudent) {
+            $this->eloquentModel = $data;
+        } else {
+            $this->eloquentModel = new EloquentStudent($data);
+            if (isset($data['id'])) {
+                $this->eloquentModel->id = $data['id'];
+                $this->eloquentModel->exists = true;
+            }
+        }
     }
     
     // Getters
-    public function getId() { return $this->id; }
-    public function getStudentnummer() { return $this->studentnummer; }
-    public function getOpleiding() { return $this->opleiding; }
-    public function getKlas() { return $this->klas; }
-    public function getScore() { return $this->score; }
-    public function getPasswordHash() { return $this->passwordHash; }
+    public function getId() { return $this->eloquentModel->id; }
+    public function getStudentnummer() { return $this->eloquentModel->studentnummer; }
+    public function getOpleiding() { return $this->eloquentModel->opleiding; }
+    public function getKlas() { return $this->eloquentModel->klas; }
+    public function getScore() { return $this->eloquentModel->score; }
+    public function getPasswordHash() { return $this->eloquentModel->password_hash; }
     
     // Setters
-    public function setScore($score) { $this->score = $score; }
+    public function setScore($score) { $this->eloquentModel->score = $score; }
     
     /**
      * Get all students from database
      */
     public static function getAll() {
-        $db = Database::getInstance();
-        $result = $db->query("SELECT id, studentnummer, opleiding, klas, score FROM student");
-        
+        $eloquentStudents = EloquentStudent::all();
         $students = [];
-        if ($result && $result->num_rows > 0) {
-            while ($row = $result->fetch_assoc()) {
-                $students[] = new Student($row);
-            }
+        foreach ($eloquentStudents as $eloquentStudent) {
+            $students[] = new Student($eloquentStudent);
         }
-        
         return $students;
     }
     
@@ -99,117 +93,82 @@ class Student {
      * Find student by studentnummer
      */
     public static function findByStudentnummer($studentnummer) {
-        $db = Database::getInstance();
-        $stmt = $db->prepare("SELECT id, studentnummer, opleiding, klas, score, password_hash FROM student WHERE studentnummer = ?");
-        $stmt->bind_param("s", $studentnummer);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        
-        if ($result->num_rows === 1) {
-            return new Student($result->fetch_assoc());
-        }
-        
-        return null;
+        $eloquentStudent = EloquentStudent::findByStudentnummer($studentnummer);
+        return $eloquentStudent ? new Student($eloquentStudent) : null;
     }
     
     /**
      * Update student score
      */
     public function updateScore($newScore) {
-        $db = Database::getInstance();
-        $stmt = $db->prepare("UPDATE student SET score = ? WHERE id = ?");
-        $stmt->bind_param("di", $newScore, $this->id);
-        
-        if ($stmt->execute()) {
-            $this->score = $newScore;
-            return true;
-        }
-        
-        return false;
+        return $this->eloquentModel->updateScore($newScore);
     }
     
     /**
      * Verify password
      */
     public function verifyPassword($password) {
-        return password_verify($password, $this->passwordHash);
+        return $this->eloquentModel->verifyPassword($password);
     }
     
     /**
      * Get score badge class based on score value
      */
     public function getScoreBadgeClass() {
-        if ($this->score === null) {
-            return 'score-none';
-        }
-        
-        if ($this->score >= 8) {
-            return 'score-high';
-        } elseif ($this->score >= 6) {
-            return 'score-medium';
-        } else {
-            return 'score-low';
-        }
+        return $this->eloquentModel->getScoreBadgeClass();
     }
     
     /**
      * Get formatted score for display
      */
     public function getFormattedScore() {
-        return $this->score !== null ? number_format($this->score, 1) : 'Geen';
+        return $this->eloquentModel->getFormattedScore();
     }
 }
 
 /**
- * Admin/User Model
+ * Admin/User Model - Wrapper around Eloquent
  */
 class User {
-    private $id;
-    private $username;
-    private $role;
-    private $passwordHash;
+    private $eloquentModel;
     
     public function __construct($data = []) {
-        $this->id = $data['id'] ?? null;
-        $this->username = $data['username'] ?? '';
-        $this->role = $data['role'] ?? '';
-        $this->passwordHash = $data['password_hash'] ?? '';
+        if ($data instanceof EloquentUser) {
+            $this->eloquentModel = $data;
+        } else {
+            $this->eloquentModel = new EloquentUser($data);
+            if (isset($data['id'])) {
+                $this->eloquentModel->id = $data['id'];
+                $this->eloquentModel->exists = true;
+            }
+        }
     }
     
     // Getters
-    public function getId() { return $this->id; }
-    public function getUsername() { return $this->username; }
-    public function getRole() { return $this->role; }
+    public function getId() { return $this->eloquentModel->id; }
+    public function getUsername() { return $this->eloquentModel->username; }
+    public function getRole() { return $this->eloquentModel->role; }
     
     /**
      * Find user by username and role
      */
     public static function findByUsernameAndRole($username, $role) {
-        $db = Database::getInstance();
-        $stmt = $db->prepare("SELECT id, username, role, password_hash FROM users WHERE username = ? AND role = ?");
-        $stmt->bind_param("ss", $username, $role);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        
-        if ($result->num_rows === 1) {
-            return new User($result->fetch_assoc());
-        }
-        
-        return null;
+        $eloquentUser = EloquentUser::findByUsernameAndRole($username, $role);
+        return $eloquentUser ? new User($eloquentUser) : null;
     }
     
     /**
      * Verify password
      */
     public function verifyPassword($password) {
-        return password_verify($password, $this->passwordHash);
+        return $this->eloquentModel->verifyPassword($password);
     }
     
     /**
      * Check if user is admin
      */
     public function isAdmin() {
-        return $this->role === 'admin';
+        return $this->eloquentModel->isAdmin();
     }
 }
 
@@ -334,7 +293,7 @@ class Auth {
 }
 
 /**
- * Score Manager
+ * Score Manager - Now uses Eloquent
  */
 class ScoreManager {
     /**
@@ -345,10 +304,13 @@ class ScoreManager {
             return false;
         }
         
-        $db = Database::getInstance();
-        $stmt = $db->prepare("UPDATE student SET score = ? WHERE id = ?");
-        $stmt->bind_param("di", $score, $studentId);
+        $student = EloquentStudent::find($studentId);
         
-        return $stmt->execute();
+        if ($student) {
+            $student->score = $score;
+            return $student->save();
+        }
+        
+        return false;
     }
 }
