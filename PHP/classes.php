@@ -89,6 +89,30 @@ class MysqliStatementWrapper {
 }
 
 /**
+ * Helper class for Opleiding (Course) name mapping
+ */
+class OpleidingHelper {
+    private static $opleidingNames = [
+        '25998BOL' => 'Software Development',
+        '29380BOL' => 'Front End Development'
+    ];
+    
+    /**
+     * Get the full name of an opleiding by its code
+     */
+    public static function getName($code) {
+        return self::$opleidingNames[$code] ?? $code;
+    }
+    
+    /**
+     * Get all opleiding mappings
+     */
+    public static function getAll() {
+        return self::$opleidingNames;
+    }
+}
+
+/**
  * Database connection class using Singleton pattern
  * Now wraps Eloquent for backward compatibility
  */
@@ -157,6 +181,7 @@ class Student {
     public function getId() { return $this->eloquentModel->id; }
     public function getStudentnummer() { return $this->eloquentModel->studentnummer; }
     public function getOpleiding() { return $this->eloquentModel->opleiding; }
+    public function getOpleidingName() { return OpleidingHelper::getName($this->eloquentModel->opleiding); }
     public function getKlas() { return $this->eloquentModel->klas; }
     public function getScore() { return $this->eloquentModel->score; }
     public function getPasswordHash() { return $this->eloquentModel->password_hash; }

@@ -16,19 +16,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['student_id'])) {
 // Get selected class filter (admin only)
 $selectedKlas = isset($_GET['klas']) ? $_GET['klas'] : 'all';
 
-// Get all students (filtered by class if admin selected one)
+// Get students based on user role
 $db = Database::getInstance();
-if (Auth::isAdmin() && $selectedKlas !== 'all') {
-    $stmt = $db->prepare("SELECT id, studentnummer, opleiding, klas, score FROM student WHERE klas = ?");
-    $stmt->bind_param("s", $selectedKlas);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    $students = [];
-    while ($row = $result->fetch_assoc()) {
-        $students[] = new Student($row);
+$students = [];
+
+if (Auth::isStudent()) {
+    // Students can only see their own data
+    if (isset($_SESSION['student_id'])) {
+        // First get the studentnummer from the session ID
+        $stmt = $db->prepare("SELECT studentnummer FROM student WHERE id = ?");
+        $stmt->bind_param("i", $_SESSION['student_id']);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        if ($row = $result->fetch_assoc()) {
+            $studentnummer = $row['studentnummer'];
+            // Now get all keuzedelen for this student
+            $allStmt = $db->prepare("SELECT id, studentnummer, opleiding, klas, score FROM student WHERE studentnummer = ? ORDER BY opleiding");
+            $allStmt->bind_param("s", $studentnummer);
+            $allStmt->execute();
+            $allResult = $allStmt->get_result();
+            while ($keuzedeel = $allResult->fetch_assoc()) {
+                $students[] = new Student($keuzedeel);
+            }
+        }
     }
-} else {
-    $students = Student::getAll();
+} elseif (Auth::isAdmin()) {
+    // Admins can see all students or filter by class
+    if ($selectedKlas !== 'all') {
+        $stmt = $db->prepare("SELECT id, studentnummer, opleiding, klas, score FROM student WHERE klas = ?");
+        $stmt->bind_param("s", $selectedKlas);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        while ($row = $result->fetch_assoc()) {
+            $students[] = new Student($row);
+        }
+    } else {
+        $students = Student::getAll();
+    }
 }
 
 // Get all unique classes for the filter dropdown
@@ -194,16 +218,16 @@ while ($row = $klassenResult->fetch_assoc()) {
         <!-- Hero Section -->
         <div class="hero">
             <div class="hero-badge">
-                📊 Score Management
+                📊 <?php echo Auth::isStudent() ? 'Mijn Voortgang' : 'Score Management'; ?>
             </div>
-            <h1>Studenten Cijfers</h1>
-            <p class="hero-subtitle">Beheer individuele student scores</p>
+            <h1><?php echo Auth::isStudent() ? 'Mijn Keuzedeel Score' : 'Studenten Cijfers'; ?></h1>
+            <p class="hero-subtitle"><?php echo Auth::isStudent() ? 'Bekijk je persoonlijke score en voortgang' : 'Beheer individuele student scores'; ?></p>
         </div>
 
         <!-- Students Table -->
         <div class="table-container">
-            <h2 style="color: var(--green-950); font-size: 28px; font-weight: 700; margin-bottom: 8px;">Student Overzicht</h2>
-            <p style="color: var(--slate-700); margin-bottom: 20px;">Bekijk en update student scores</p>
+            <h2 style="color: var(--green-950); font-size: 28px; font-weight: 700; margin-bottom: 8px;"><?php echo Auth::isStudent() ? 'Mijn Gegevens' : 'Student Overzicht'; ?></h2>
+            <p style="color: var(--slate-700); margin-bottom: 20px;"><?php echo Auth::isStudent() ? 'Je persoonlijke score informatie' : 'Bekijk en update student scores'; ?></p>
 
             <!-- Class Filter (Admin Only) -->
             <?php if (Auth::isAdmin()): ?>
@@ -231,6 +255,7 @@ while ($row = $klassenResult->fetch_assoc()) {
                         <th>ID</th>
                         <th>Studentnummer</th>
                         <th>Keuzedeel</th>
+                        <th>Opleiding</th>
                         <th>Klas</th>
                         <th>Score</th>
                         <th>Actie</th>
@@ -244,6 +269,7 @@ while ($row = $klassenResult->fetch_assoc()) {
                             echo "<td><strong>#{$student->getId()}</strong></td>";
                             echo "<td>{$student->getStudentnummer()}</td>";
                             echo "<td>{$student->getOpleiding()}</td>";
+                            echo "<td><strong>{$student->getOpleidingName()}</strong></td>";
                             echo "<td><span class='score-badge score-medium'>{$student->getKlas()}</span></td>";
                             echo "<td><span class='score-badge {$student->getScoreBadgeClass()}'>{$student->getFormattedScore()}</span></td>";
                             
